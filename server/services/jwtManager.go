@@ -1,0 +1,72 @@
+package services
+
+import (
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/sirupsen/logrus"
+)
+
+type JWTManager struct {
+	key        []byte
+	keyfunc    jwt.Keyfunc
+	expiration time.Duration
+	logger     *logrus.Logger
+}
+
+func NewJWTManager(key string, expiration time.Duration, logger *logrus.Logger) *JWTManager {
+	m := new(JWTManager)
+	m.key = []byte(key)
+	m.keyfunc = func(t *jwt.Token) (interface{}, error) { return m.key, nil }
+	m.expiration = expiration
+	m.logger = logger
+
+	return m
+}
+
+type UserClaims struct {
+	Username string `json:"username"`
+	jwt.RegisteredClaims
+}
+
+func (m *JWTManager) IssueToken(username string) (string, error) {
+	claims := UserClaims{
+		username,
+		jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(m.expiration)),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	tokenString, err := token.SignedString(m.key)
+	if err != nil {
+		return "", err
+	}
+
+	return tokenString, nil
+}
+
+// Tries to extract JWT token from Authorization header and parse it.
+func (m *JWTManager) ParseToken(ctx *gin.Context) (*jwt.Token, *UserClaims, error) {
+	header := ctx.GetHeader("Authorization")
+	if header == "" {
+		return nil, &UserClaims{}, errors.New("'Authorization' header is missing")
+	}
+
+	headerSplit := strings.Split(header, " ")
+	if len(headerSplit) != 2 || headerSplit[0] != "Bearer" {
+		return nil, &UserClaims{}, errors.New("'Authorization' header value is malformed")
+	}
+
+	tokenString := headerSplit[1]
+	var claims *UserClaims
+	token, err := jwt.ParseWithClaims(tokenString, claims, m.keyfunc)
+	if err == nil && claims == nil {
+		// That's strange, return an error
+		err = errors.New("failed to extract claims from token")
+	}
+	return token, claims, err
+}
