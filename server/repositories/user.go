@@ -52,7 +52,7 @@ func (r *UserRepository) Create(user models.User) error {
 
 // Returns user corresponding to provided username or nil if it does not exist.
 func (r *UserRepository) Get(username string) (*models.User, error) {
-	var user *models.User
+	user := &models.User{}
 	err := r.db.First(user, "username = ?", username).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

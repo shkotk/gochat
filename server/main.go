@@ -10,6 +10,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/shkotk/gochat/common/validation"
 	"github.com/shkotk/gochat/server/controllers"
+	"github.com/shkotk/gochat/server/core"
 	"github.com/shkotk/gochat/server/middleware"
 	"github.com/shkotk/gochat/server/models"
 	"github.com/shkotk/gochat/server/repositories"
@@ -20,6 +21,7 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
+// TODO split to improve readability and testability
 func main() {
 	// Load environment variables
 	godotenv.Load(".env.local")
@@ -44,16 +46,19 @@ func main() {
 	logger.SetLevel(logLevel)
 
 	// Setup ORM
-	gormLogLevel := gormlogger.Silent // there is no other way to avoid logging sensitive data; TODO maybe update when this PR is merged https://github.com/go-gorm/gorm/pull/5288
+	gormLogLevel := gormlogger.Warn
+	logParameterizedQueries := true
 	if debug {
 		gormLogLevel = gormlogger.Info
+		logParameterizedQueries = false
 	}
 	connString := readRequiredConfig("PG_CONNECTION_STRING", logger)
 	db, err := gorm.Open(postgres.Open(connString), &gorm.Config{
 		Logger: gormlogger.New(
 			logger.WithField("component", "gorm"),
 			gormlogger.Config{
-				LogLevel: gormLogLevel,
+				LogLevel:             gormLogLevel,
+				ParameterizedQueries: logParameterizedQueries,
 			}),
 	})
 	if err != nil {
@@ -64,7 +69,7 @@ func main() {
 
 	// Register custom validators
 	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
-		v.RegisterValidation("username", validation.IsValidUsername)
+		v.RegisterValidation("name", validation.IsValidName)
 	}
 
 	// Setup services
@@ -77,9 +82,12 @@ func main() {
 			"Can't parse Duration from 'JWT_EXPIRATION' config value '%v'",
 			jwtExpirationStr)
 	}
-	jwtManager := services.NewJWTManager(jwtKey, jwtExpiration, logger)
+	jwtManager := services.NewJWTManager(jwtKey, jwtExpiration)
 	userRepository := repositories.NewUserRepository(logger, db)
+	chatManager := core.NewChatManager(logger)
+
 	userController := controllers.NewUserController(logger, userRepository, jwtManager)
+	chatController := controllers.NewChatController(logger, jwtManager, chatManager)
 
 	// Setup router
 	if !debug {
@@ -89,11 +97,16 @@ func main() {
 	router := gin.New()
 	router.SetTrustedProxies(nil)
 	router.Use(middleware.Logger(logger), middleware.Recovery(logger))
+	jwtRouterGroup := router.Group("", middleware.JWT(jwtManager))
 
 	router.GET("/user/exists/:username", userController.Exists)
 	router.POST("/user/register", userController.Register)
 	router.GET("/token/get", userController.GetToken)
-	router.GET("/token/refresh", userController.RefreshToken)
+	jwtRouterGroup.GET("/token/refresh", userController.RefreshToken)
+
+	jwtRouterGroup.POST("/chat/create/:chatName", chatController.Create)
+	jwtRouterGroup.GET("/chat/list", chatController.List)
+	jwtRouterGroup.GET("/chat/join/:chatName", chatController.Join)
 
 	// Start router
 	port := readRequiredConfig("PORT", logger)

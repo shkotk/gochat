@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/shkotk/gochat/common/apimodels/requests"
 	"github.com/shkotk/gochat/common/apimodels/responses"
+	"github.com/shkotk/gochat/server/middleware"
 	"github.com/shkotk/gochat/server/models"
 	"github.com/shkotk/gochat/server/repositories"
 	"github.com/shkotk/gochat/server/services"
@@ -114,30 +115,31 @@ func (c *UserController) GetToken(ctx *gin.Context) {
 		return
 	}
 
-	token, err := c.jwtManager.IssueToken(request.Username)
+	tokenString, expiresAt, err := c.jwtManager.IssueToken(request.Username)
 	if err != nil {
 		ctx.Error(err)
 		ctx.JSON(http.StatusInternalServerError, responses.Error{Error: err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, responses.Token{Token: token})
+	ctx.JSON(http.StatusOK, responses.Token{
+		Token:     tokenString,
+		ExpiresAt: expiresAt,
+	})
 }
 
 func (c *UserController) RefreshToken(ctx *gin.Context) {
-	token, claims, err := c.jwtManager.ParseToken(ctx)
-	if err != nil || !token.Valid {
-		ctx.Error(err)
-		ctx.JSON(http.StatusUnauthorized, responses.Error{Error: err.Error()})
-		return
-	}
+	claims := ctx.MustGet(middleware.UserClaimsKey).(services.UserClaims)
 
-	refreshedTokenString, err := c.jwtManager.IssueToken(claims.Username)
+	refreshedTokenString, expiresAt, err := c.jwtManager.IssueToken(claims.Username)
 	if err != nil {
 		ctx.Error(err)
 		ctx.JSON(http.StatusInternalServerError, responses.Error{Error: err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, responses.Token{Token: refreshedTokenString})
+	ctx.JSON(http.StatusOK, responses.Token{
+		Token:     refreshedTokenString,
+		ExpiresAt: expiresAt,
+	})
 }
