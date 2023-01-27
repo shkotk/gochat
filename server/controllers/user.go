@@ -42,7 +42,7 @@ func (c *UserController) Exists(ctx *gin.Context) {
 		return
 	}
 
-	exists, err := c.userRepository.Exists(request.Username)
+	exists, err := c.userRepository.Exists(ctx, request.Username)
 	if err != nil {
 		ctx.Error(err)
 		ctx.JSON(http.StatusInternalServerError, responses.Error{Error: err.Error()})
@@ -71,7 +71,7 @@ func (c *UserController) Register(ctx *gin.Context) {
 		Username:     request.Username,
 		PasswordHash: string(passwordHash),
 	}
-	if err := c.userRepository.Create(user); err != nil {
+	if err := c.userRepository.Create(ctx, user); err != nil {
 		ctx.Error(err)
 		ctx.JSON(http.StatusInternalServerError, responses.Error{Error: err.Error()})
 		return
@@ -88,7 +88,7 @@ func (c *UserController) GetToken(ctx *gin.Context) {
 		return
 	}
 
-	user, err := c.userRepository.Get(request.Username)
+	user, err := c.userRepository.Get(ctx, request.Username)
 	if err != nil {
 		ctx.Error(err)
 		ctx.JSON(http.StatusInternalServerError, responses.Error{Error: err.Error()})

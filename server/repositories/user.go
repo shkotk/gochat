@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"context"
 	"errors"
 
 	"github.com/shkotk/gochat/server/models"
@@ -17,8 +18,9 @@ func NewUserRepository(logger *logrus.Logger, db *gorm.DB) *UserRepository {
 	return &UserRepository{logger, db}
 }
 
-func (r *UserRepository) Exists(username string) (exists bool, err error) {
-	err = r.db.Model(&models.User{}).
+func (r *UserRepository) Exists(ctx context.Context, username string) (exists bool, err error) {
+	err = r.db.WithContext(ctx).
+		Model(&models.User{}).
 		Select("count(*) > 0").
 		Where("username = ?", username).
 		Find(&exists).
@@ -35,8 +37,8 @@ func (r *UserRepository) Exists(username string) (exists bool, err error) {
 	return
 }
 
-func (r *UserRepository) Create(user models.User) error {
-	err := r.db.Create(user).Error
+func (r *UserRepository) Create(ctx context.Context, user models.User) error {
+	err := r.db.WithContext(ctx).Create(user).Error
 	if err != nil {
 		r.logger.WithError(err).
 			WithFields(logrus.Fields{
@@ -51,9 +53,9 @@ func (r *UserRepository) Create(user models.User) error {
 }
 
 // Returns user corresponding to provided username or nil if it does not exist.
-func (r *UserRepository) Get(username string) (*models.User, error) {
+func (r *UserRepository) Get(ctx context.Context, username string) (*models.User, error) {
 	user := &models.User{}
-	err := r.db.First(user, "username = ?", username).Error
+	err := r.db.WithContext(ctx).First(user, "username = ?", username).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
