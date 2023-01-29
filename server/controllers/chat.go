@@ -12,10 +12,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var (
+	websocketUpgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+	}
+)
+
 type ChatController struct {
 	logger      *logrus.Logger
 	jwtManager  *services.JWTManager
-	upgrader    websocket.Upgrader
 	chatManager *core.ChatManager
 }
 
@@ -24,8 +30,7 @@ func NewChatController(
 	jwtManager *services.JWTManager,
 	chatManager *core.ChatManager,
 ) *ChatController {
-	upgrader := websocket.Upgrader{} // use defaults
-	return &ChatController{logger, jwtManager, upgrader, chatManager}
+	return &ChatController{logger, jwtManager, chatManager}
 }
 
 type createRequest struct {
@@ -74,7 +79,7 @@ func (c *ChatController) Join(ctx *gin.Context) {
 		return
 	}
 
-	conn, err := c.upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
+	conn, err := websocketUpgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
 		c.logger.WithError(err).Warn("Failed to upgrade connection.")
 		ctx.Error(err)
@@ -90,7 +95,6 @@ func (c *ChatController) Join(ctx *gin.Context) {
 			"Failed to add user '%' to chat '%'.", claims.Username, request.ChatName)
 		ctx.Error(err)
 
-		// TODO try signal error to client
 		if err = conn.Close(); err != nil {
 			c.logger.WithError(err).Warnf(
 				"Failed to close connection with user '%'.", request.ChatName)

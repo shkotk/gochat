@@ -21,6 +21,9 @@ const (
 
 	// Maximum message size allowed from peer.
 	maxMessageSize = 512
+
+	// Give up on sending event to writeQueue after this period.
+	writeEnqueueTimeout = time.Minute
 )
 
 type Client struct {
@@ -28,54 +31,60 @@ type Client struct {
 	conn       *websocket.Conn
 	writeQueue chan any
 
+	chat   *Chat
 	logger *logrus.Logger
 }
 
-func NewClient(username string, conn *websocket.Conn, logger *logrus.Logger) *Client {
+func NewClient(username string, conn *websocket.Conn, chat *Chat, logger *logrus.Logger) *Client {
 	client := &Client{
 		Username:   username,
 		conn:       conn,
 		writeQueue: make(chan any),
+		chat:       chat,
 		logger:     logger,
 	}
 
 	return client
 }
 
-func (c *Client) Run(out chan any) {
-	go c.readLoop(out)
-	c.writeLoop()
+func (c *Client) Start() {
+	go c.readLoop()
+	go c.writeLoop()
 }
 
 // Reads WebSocket messages and writes them to provided channel.
-func (c *Client) readLoop(eventsChan chan any) {
+func (c *Client) readLoop() {
 	defer func() {
-		eventsChan <- leaveEvent{Producer: c.Username} // signal caller
-		close(c.writeQueue)                            // signal write loop
+		c.chat.Leave(c.Username) // signal chat
+		close(c.writeQueue)      // signal write loop
 	}()
 
 	c.conn.SetReadLimit(maxMessageSize)
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.conn.SetPongHandler(func(string) error {
-		c.logger.Debugf("got pong from %s", c.Username)
-		c.conn.SetReadDeadline(time.Now().Add(pongWait))
-		return nil
-	})
+	c.conn.SetPongHandler(
+		func(string) error {
+			c.conn.SetReadDeadline(time.Now().Add(pongWait))
+			return nil
+		})
 
 	for {
 		mt, message, err := c.conn.ReadMessage()
 		if err != nil {
-			c.logger.WithError(err).Debugf("error occurred while reading message from %s", c.Username)
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				c.logger.WithError(err).Warnf("client: failed to read message from %s", c.Username)
+			}
 			return
 		}
+
 		if mt != websocket.TextMessage {
-			c.logger.Debugf("got message of unexpected type '%v' from %s", mt, c.Username)
+			c.logger.Warnf("client: got message of unexpected type '%v' from %s", mt, c.Username)
 			continue
 		}
 
 		event, err := events.Parse(message)
 		if err != nil {
-			c.logger.WithError(err).Debugf("error occurred while parsing message from %s: '%s'", c.Username, message)
+			c.logger.WithError(err).Warnf(
+				"client: failed to parse message from %s; message: '%s'", c.Username, message)
 			continue
 		}
 
@@ -87,11 +96,10 @@ func (c *Client) readLoop(eventsChan chan any) {
 			event = e
 
 		default:
-			panic(fmt.Sprintf("unexpected event type '%T'", event))
+			c.logger.Warnf("client: got unexpected event type '%T'", event)
 		}
 
-		c.logger.Debugf("got event from %s: '%v'", c.Username, event)
-		eventsChan <- event
+		c.chat.Send(event)
 	}
 }
 
@@ -100,8 +108,8 @@ func (c *Client) Write(event any) error {
 	select {
 	case c.writeQueue <- event:
 		return nil
-	case <-time.After(time.Minute):
-		return fmt.Errorf("timed out writing message to %s", c.Username)
+	case <-time.After(writeEnqueueTimeout):
+		return fmt.Errorf("client: timed out writing message to %s", c.Username)
 	}
 }
 
@@ -122,22 +130,21 @@ func (c *Client) writeLoop() {
 
 			message, err := events.Serialize(event)
 			if err != nil {
-				c.logger.WithError(err).Debugf("failed to serialize event '%v'")
+				c.logger.WithError(err).Errorf(
+					"client: failed to serialize event of type %T, value: '%v'", event, event)
 				continue
 			}
 
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			c.logger.Debugf("sending message '%s' to %s", message, c.Username)
 			if err = c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
-				c.logger.WithError(err).Debugf("error occurred while writing message to %s", c.Username)
+				c.logger.WithError(err).Warnf("client: error writing message to %s", c.Username)
 				return
 			}
 
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			c.logger.Debugf("sending ping to %s", c.Username)
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				c.logger.WithError(err).Debugf("ping failed for %s", c.Username)
+				c.logger.WithError(err).Errorf("client: error sending ping to %s", c.Username)
 				return
 			}
 		}
