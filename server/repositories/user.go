@@ -38,7 +38,7 @@ func (r *UserRepository) Exists(ctx context.Context, username string) (exists bo
 }
 
 func (r *UserRepository) Create(ctx context.Context, user models.User) error {
-	err := r.db.WithContext(ctx).Create(user).Error
+	err := r.db.WithContext(ctx).Create(&user).Error
 	if err != nil {
 		r.logger.WithError(err).
 			WithFields(logrus.Fields{

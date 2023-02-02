@@ -92,12 +92,12 @@ func (c *ChatController) Join(ctx *gin.Context) {
 	err = c.chatManager.Join(claims.Username, conn, request.ChatName)
 	if err != nil {
 		c.logger.WithError(err).Warnf(
-			"Failed to add user '%' to chat '%'.", claims.Username, request.ChatName)
+			"Failed to add user '%s' to chat '%s'.", claims.Username, request.ChatName)
 		ctx.Error(err)
 
 		if err = conn.Close(); err != nil {
 			c.logger.WithError(err).Warnf(
-				"Failed to close connection with user '%'.", request.ChatName)
+				"Failed to close connection with user '%s'.", request.ChatName)
 			ctx.Error(err)
 		}
 	}

@@ -47,6 +47,7 @@ func NewClient(username string, conn *websocket.Conn, chat *Chat, logger *logrus
 	return client
 }
 
+// Launches read and write loops in separate goroutines.
 func (c *Client) Start() {
 	go c.readLoop()
 	go c.writeLoop()
