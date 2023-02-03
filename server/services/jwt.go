@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/shkotk/gochat/server/config"
 )
 
 type JWTManager struct {
@@ -15,11 +16,11 @@ type JWTManager struct {
 	expiration time.Duration
 }
 
-func NewJWTManager(key string, expiration time.Duration) *JWTManager {
+func NewJWTManager(cfg config.Config) *JWTManager {
 	m := new(JWTManager)
-	m.key = []byte(key)
+	m.key = []byte(cfg.JWT.Key)
 	m.keyfunc = func(t *jwt.Token) (interface{}, error) { return m.key, nil }
-	m.expiration = expiration
+	m.expiration = cfg.JWT.Expiration
 
 	return m
 }

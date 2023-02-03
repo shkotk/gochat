@@ -1,19 +1,17 @@
 package main
 
 import (
+	"fmt"
 	"os"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
-	"github.com/joho/godotenv"
 	"github.com/shkotk/gochat/common/validation"
+	"github.com/shkotk/gochat/server/config"
 	"github.com/shkotk/gochat/server/controllers"
-	"github.com/shkotk/gochat/server/core"
 	"github.com/shkotk/gochat/server/middleware"
 	"github.com/shkotk/gochat/server/models"
-	"github.com/shkotk/gochat/server/repositories"
 	"github.com/shkotk/gochat/server/services"
 	"github.com/sirupsen/logrus"
 	"gorm.io/driver/postgres"
@@ -21,43 +19,51 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
-// TODO split to improve readability and testability
 func main() {
-	// Load environment variables
-	godotenv.Load(".env.local")
-	godotenv.Load(".env")
-	// Or if server is run in workspace mode
-	godotenv.Load("server/.env.local")
-	godotenv.Load("server/.env")
+	cfg := config.Load(
+		".env.local", ".env",
+		"server/.env.local", "server/.env", // if running in workspace mode
+	)
 
-	debug := os.Getenv("DEBUG") == "1"
+	// Register custom validators // TODO move validator configuration to common
+	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		v.RegisterValidation("name", validation.IsValidName)
+	}
 
-	// Setup logger
+	InitializeRouter(cfg).RunTLS(
+		fmt.Sprintf(":%d", cfg.Port),
+		cfg.TLS.CertPath,
+		cfg.TLS.KeyPath)
+}
+
+func setupLogger(cfg config.Config) *logrus.Logger {
 	logger := logrus.New()
-	if !debug {
+	if !cfg.Debug {
 		logger.SetOutput(os.Stdout)
 		logger.SetFormatter(&logrus.JSONFormatter{})
 	}
 
-	logLevel, err := logrus.ParseLevel(os.Getenv("LOG_LEVEL"))
+	logLevel, err := logrus.ParseLevel(cfg.LogLevel)
 	if err != nil {
 		logger.WithError(err).Fatal("Can't parse log level")
 	}
 	logger.SetLevel(logLevel)
 
-	// Setup ORM
-	gormLogLevel := gormlogger.Warn
+	return logger
+}
+
+func setupDB(cfg config.Config, logger *logrus.Logger) *gorm.DB {
+	logLevel := gormlogger.Warn
 	logParameterizedQueries := true
-	if debug {
-		gormLogLevel = gormlogger.Info
+	if cfg.Debug {
+		logLevel = gormlogger.Info
 		logParameterizedQueries = false
 	}
-	connString := readRequiredConfig("PG_CONNECTION_STRING", logger)
-	db, err := gorm.Open(postgres.Open(connString), &gorm.Config{
+	db, err := gorm.Open(postgres.Open(cfg.PGConnString), &gorm.Config{
 		Logger: gormlogger.New(
 			logger.WithField("component", "gorm"),
 			gormlogger.Config{
-				LogLevel:             gormLogLevel,
+				LogLevel:             logLevel,
 				ParameterizedQueries: logParameterizedQueries,
 			}),
 	})
@@ -65,32 +71,22 @@ func main() {
 		logger.WithError(err).Fatal("Can't connect to DB")
 	}
 
-	db.AutoMigrate(models.User{}) // TODO add migrations?
-
-	// Register custom validators
-	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
-		v.RegisterValidation("name", validation.IsValidName)
-	}
-
-	// Setup services
-	// TODO use wire?
-	jwtKey := readRequiredConfig("JWT_KEY", logger)
-	jwtExpirationStr := readRequiredConfig("JWT_EXPIRATION", logger)
-	jwtExpiration, err := time.ParseDuration(jwtExpirationStr)
+	err = db.AutoMigrate(models.User{}) // TODO add migrations?
 	if err != nil {
-		logger.WithError(err).Fatalf(
-			"Can't parse Duration from 'JWT_EXPIRATION' config value '%v'",
-			jwtExpirationStr)
+		logger.WithError(err).Fatal("Can't apply automatic migration")
 	}
-	jwtManager := services.NewJWTManager(jwtKey, jwtExpiration)
-	userRepository := repositories.NewUserRepository(logger, db)
-	chatManager := core.NewChatManager(logger)
 
-	userController := controllers.NewUserController(logger, userRepository, jwtManager)
-	chatController := controllers.NewChatController(logger, jwtManager, chatManager)
+	return db
+}
 
-	// Setup router
-	if !debug {
+func setupRouter(
+	cfg config.Config,
+	logger *logrus.Logger,
+	jwtManager *services.JWTManager,
+	userController *controllers.UserController,
+	chatController *controllers.ChatController,
+) *gin.Engine {
+	if !cfg.Debug {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
@@ -108,18 +104,5 @@ func main() {
 	jwtRouterGroup.GET("/chat/list", chatController.List)
 	jwtRouterGroup.GET("/chat/join/:chatName", chatController.Join)
 
-	// Start router
-	port := readRequiredConfig("PORT", logger)
-	certPath := readRequiredConfig("SSL_CERT_PATH", logger)
-	keyPath := readRequiredConfig("SSL_KEY_PATH", logger)
-	router.RunTLS(":"+port, certPath, keyPath)
-}
-
-func readRequiredConfig(configKey string, logger *logrus.Logger) string {
-	configValue := os.Getenv(configKey)
-	if configValue == "" {
-		logger.Fatalf("'%v' config is required, but was empty or missing", configKey)
-	}
-
-	return configValue
+	return router
 }
