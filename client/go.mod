@@ -1,14 +1,14 @@
 module github.com/shkotk/gochat/client
 
-go 1.19
+go 1.20
 
 require (
-	github.com/charmbracelet/bubbles v0.14.0
+	github.com/charmbracelet/bubbles v0.15.0
 	github.com/charmbracelet/bubbletea v0.23.1
 	github.com/charmbracelet/lipgloss v0.6.0
 	github.com/go-playground/locales v0.14.1
-	github.com/go-playground/universal-translator v0.18.0
-	github.com/go-playground/validator/v10 v10.11.1
+	github.com/go-playground/universal-translator v0.18.1
+	github.com/go-playground/validator/v10 v10.11.2
 	github.com/gorilla/websocket v1.5.0
 	github.com/shkotk/gochat/common v0.0.0
 )
@@ -32,7 +32,6 @@ require (
 	golang.org/x/sys v0.4.0 // indirect
 	golang.org/x/term v0.4.0 // indirect
 	golang.org/x/text v0.6.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace github.com/shkotk/gochat/common v0.0.0 => ../common
