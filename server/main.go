@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -30,10 +31,13 @@ func main() {
 		v.RegisterValidation("name", validation.IsValidName)
 	}
 
-	InitializeRouter(cfg).RunTLS(
+	err := InitializeRouter(cfg).RunTLS(
 		fmt.Sprintf(":%d", cfg.Port),
 		cfg.TLS.CertPath,
 		cfg.TLS.KeyPath)
+	if err != nil {
+		log.Fatalf("error running roter: %s", err)
+	}
 }
 
 func setupLogger(cfg config.Config) *logrus.Logger {

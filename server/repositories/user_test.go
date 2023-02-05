@@ -31,12 +31,10 @@ func (s *DBTestSuite) TestUser_Exists_PopulatedUsersTable_ReturnsExpectedResult(
 		},
 	})
 
-	type testCase struct {
+	tests := []struct {
 		username       string
 		expectedResult bool
-	}
-
-	cases := []testCase{
+	}{
 		{"stanley", true},
 		{"michael", false},
 		{"kevin", true},
@@ -44,7 +42,7 @@ func (s *DBTestSuite) TestUser_Exists_PopulatedUsersTable_ReturnsExpectedResult(
 
 	userRepository := NewUserRepository(logrus.StandardLogger(), s.testDB)
 
-	for _, test := range cases {
+	for _, test := range tests {
 		s.Run(test.username, func() {
 			actual, err := userRepository.Exists(context.Background(), test.username)
 
@@ -71,13 +69,11 @@ func (s *DBTestSuite) TestUser_Create_InvalidUser_ReturnsError() {
 		PasswordHash: "somehash",
 	})
 
-	type testCase struct {
+	tests := []struct {
 		label         string
 		user          models.User
 		expectedError string
-	}
-
-	cases := []testCase{
+	}{
 		{
 			label:         "missing username and password hash",
 			user:          models.User{},
@@ -102,7 +98,7 @@ func (s *DBTestSuite) TestUser_Create_InvalidUser_ReturnsError() {
 
 	userRepository := NewUserRepository(logrus.StandardLogger(), s.testDB)
 
-	for _, test := range cases {
+	for _, test := range tests {
 		s.Run(test.label, func() {
 			err := userRepository.Create(context.Background(), test.user)
 
@@ -153,12 +149,10 @@ func (s *DBTestSuite) TestUser_Get_PopulatedUsersTable_ReturnsExpectedResult() {
 		},
 	})
 
-	type testCase struct {
+	tests := []struct {
 		username       string
 		expectedResult *models.User
-	}
-
-	cases := []testCase{
+	}{
 		{"stanley", &models.User{Username: "stanley", PasswordHash: "somehash"}},
 		{"michael", nil},
 		{"kevin", &models.User{Username: "kevin", PasswordHash: "otherhash"}},
@@ -166,7 +160,7 @@ func (s *DBTestSuite) TestUser_Get_PopulatedUsersTable_ReturnsExpectedResult() {
 
 	userRepository := NewUserRepository(logrus.StandardLogger(), s.testDB)
 
-	for _, test := range cases {
+	for _, test := range tests {
 		s.Run(test.username, func() {
 			actual, err := userRepository.Get(context.Background(), test.username)
 
