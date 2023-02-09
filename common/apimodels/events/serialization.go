@@ -12,12 +12,14 @@ var (
 	systemMessagePrefix = []byte("SystemMessage|")
 )
 
+// Serializes event to a JSON string with prefix representing event type.
+// A pointer to an event struct of a known type is expected.
 func Serialize(event any) ([]byte, error) {
 	var prefix []byte
 	switch event.(type) {
-	case NewMessage:
+	case *NewMessage:
 		prefix = newMessagePrefix
-	case SystemMessage:
+	case *SystemMessage:
 		prefix = systemMessagePrefix
 	default:
 		return nil, fmt.Errorf("unknown event type '%T'", event)
@@ -31,6 +33,8 @@ func Serialize(event any) ([]byte, error) {
 	return append(prefix, jsonBytes...), nil
 }
 
+// Parses event from a JSON string with prefix representing event type.
+// A pointer to an event struct is returned.
 func Parse(messageBytes []byte) (any, error) {
 	pipePos := bytes.IndexRune(messageBytes, '|')
 	if pipePos <= 0 || pipePos == len(messageBytes)-1 {
@@ -42,20 +46,20 @@ func Parse(messageBytes []byte) (any, error) {
 
 	var event any
 	var err error
-	// currently Unmarshal() can't figure out underlying type of event
-	// may be changed later with https://github.com/golang/go/issues/26946
 	switch {
 	case bytes.Equal(prefix, newMessagePrefix):
-		nm := NewMessage{}
-		err = json.Unmarshal(jsonBytes, &nm)
-		event = nm
+		event, err = unmarshal[NewMessage](jsonBytes)
 	case bytes.Equal(prefix, systemMessagePrefix):
-		sm := SystemMessage{}
-		err = json.Unmarshal(jsonBytes, &sm)
-		event = sm
+		event, err = unmarshal[SystemMessage](jsonBytes)
 	default:
 		return nil, fmt.Errorf("unexpected event prefix '%v'", prefix)
 	}
 
 	return event, err
+}
+
+func unmarshal[T any](bytes []byte) (*T, error) {
+	result := new(T)
+	err := json.Unmarshal(bytes, result)
+	return result, err
 }

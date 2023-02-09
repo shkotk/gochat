@@ -81,10 +81,10 @@ func (m Chat) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case EventMsg:
 		line := ""
 		switch event := msg.Event.(type) {
-		case events.NewMessage:
+		case *events.NewMessage:
 			line = fmt.Sprintf(
 				"%s: %s", senderNameStyle.Render(event.Producer), event.Text)
-		case events.SystemMessage:
+		case *events.SystemMessage:
 			line = systemMessageStyle.Render(event.Text)
 		}
 
@@ -106,7 +106,7 @@ func (m Chat) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.textarea.Reset()
 			return m, func() tea.Msg {
-				err := m.client.WriteEvent(events.NewMessage{Text: message})
+				err := m.client.WriteEvent(&events.NewMessage{Text: message})
 				if err != nil {
 					return ErrorMsg(err.Error())
 				}

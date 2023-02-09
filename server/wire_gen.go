@@ -23,7 +23,8 @@ func InitializeRouter(cfg config.Config) *gin.Engine {
 	db := setupDB(cfg, logger)
 	userRepository := repositories.NewUserRepository(logger, db)
 	userController := controllers.NewUserController(logger, userRepository, jwtManager)
-	chatManager := core.NewChatManager(logger)
+	eventPreProcessor := core.NewEventPreProcessor()
+	chatManager := core.NewChatManager(logger, eventPreProcessor)
 	chatController := controllers.NewChatController(logger, jwtManager, chatManager)
 	engine := setupRouter(cfg, logger, jwtManager, userController, chatController)
 	return engine

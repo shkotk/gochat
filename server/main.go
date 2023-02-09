@@ -8,11 +8,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/wire"
 	"github.com/shkotk/gochat/common/validation"
 	"github.com/shkotk/gochat/server/config"
 	"github.com/shkotk/gochat/server/controllers"
+	"github.com/shkotk/gochat/server/core"
+	"github.com/shkotk/gochat/server/interfaces"
 	"github.com/shkotk/gochat/server/middleware"
 	"github.com/shkotk/gochat/server/models"
+	"github.com/shkotk/gochat/server/repositories"
 	"github.com/shkotk/gochat/server/services"
 	"github.com/sirupsen/logrus"
 	"gorm.io/driver/postgres"
@@ -39,6 +43,25 @@ func main() {
 		log.Fatalf("error running roter: %s", err)
 	}
 }
+
+// used in wire.go
+var servicesSet = wire.NewSet(
+	setupLogger,
+	setupDB,
+	services.NewJWTManager,
+	repositories.NewUserRepository,
+
+	wire.Bind(new(interfaces.ChatManager), new(*core.ChatManager)),
+	core.NewChatManager,
+
+	wire.Bind(new(interfaces.EventPreProcessor), new(*core.EventPreProcessor)),
+	core.NewEventPreProcessor,
+
+	controllers.NewUserController,
+	controllers.NewChatController,
+
+	setupRouter,
+)
 
 func setupLogger(cfg config.Config) *logrus.Logger {
 	logger := logrus.New()

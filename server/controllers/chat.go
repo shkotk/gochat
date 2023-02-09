@@ -4,31 +4,24 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 	"github.com/shkotk/gochat/common/apimodels/responses"
-	"github.com/shkotk/gochat/server/core"
+	"github.com/shkotk/gochat/server/interfaces"
 	"github.com/shkotk/gochat/server/middleware"
 	"github.com/shkotk/gochat/server/services"
+	"github.com/shkotk/gochat/server/websocket"
 	"github.com/sirupsen/logrus"
-)
-
-var (
-	websocketUpgrader = websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-	}
 )
 
 type ChatController struct {
 	logger      *logrus.Logger
 	jwtManager  *services.JWTManager
-	chatManager *core.ChatManager
+	chatManager interfaces.ChatManager
 }
 
 func NewChatController(
 	logger *logrus.Logger,
 	jwtManager *services.JWTManager,
-	chatManager *core.ChatManager,
+	chatManager interfaces.ChatManager,
 ) *ChatController {
 	return &ChatController{logger, jwtManager, chatManager}
 }
@@ -79,7 +72,7 @@ func (c *ChatController) Join(ctx *gin.Context) {
 		return
 	}
 
-	conn, err := websocketUpgrader.Upgrade(ctx.Writer, ctx.Request, nil)
+	conn, err := websocket.Upgrade(ctx.Writer, ctx.Request)
 	if err != nil {
 		c.logger.WithError(err).Warn("Failed to upgrade connection.")
 		ctx.Error(err)
@@ -89,7 +82,8 @@ func (c *ChatController) Join(ctx *gin.Context) {
 		return
 	}
 
-	err = c.chatManager.Join(claims.Username, conn, request.ChatName)
+	client := websocket.NewClient(claims.Username, conn, c.logger)
+	err = c.chatManager.AddClient(client, request.ChatName)
 	if err != nil {
 		c.logger.WithError(err).Warnf(
 			"Failed to add user '%s' to chat '%s'.", claims.Username, request.ChatName)
@@ -100,5 +94,9 @@ func (c *ChatController) Join(ctx *gin.Context) {
 				"Failed to close connection with user '%s'.", request.ChatName)
 			ctx.Error(err)
 		}
+
+		return
 	}
+
+	go client.Run()
 }

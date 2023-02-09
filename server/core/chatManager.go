@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/gorilla/websocket"
+	"github.com/shkotk/gochat/server/interfaces"
 	"github.com/sirupsen/logrus"
 )
 
@@ -12,17 +12,21 @@ type ChatManager struct {
 	chats     map[string]*Chat
 	chatsLock sync.RWMutex
 
-	logger *logrus.Logger
+	eventsPreProcessor interfaces.EventPreProcessor
+	logger             *logrus.Logger
 }
 
-func NewChatManager(logger *logrus.Logger) *ChatManager {
+func NewChatManager(
+	logger *logrus.Logger,
+	eventsPreProcessor interfaces.EventPreProcessor,
+) *ChatManager {
 	return &ChatManager{
-		chats:  make(map[string]*Chat),
-		logger: logger,
+		chats:              make(map[string]*Chat),
+		eventsPreProcessor: eventsPreProcessor,
+		logger:             logger,
 	}
 }
 
-// Creates new Chat with specified chat name.
 func (m *ChatManager) Create(chatName string) error {
 	m.chatsLock.Lock()
 	defer m.chatsLock.Unlock()
@@ -31,14 +35,13 @@ func (m *ChatManager) Create(chatName string) error {
 		return fmt.Errorf("chat with name '%v' already exists", chatName)
 	}
 
-	chat := NewChat(chatName, m.logger)
+	chat := NewChat(chatName, m.eventsPreProcessor, m.logger)
 	m.chats[chatName] = chat
 	go chat.Run()
 
 	return nil
 }
 
-// Lists all existing chats.
 func (m *ChatManager) List() ([]string, error) {
 	m.chatsLock.RLock()
 	defer m.chatsLock.RUnlock()
@@ -53,8 +56,7 @@ func (m *ChatManager) List() ([]string, error) {
 	return chatNames, nil
 }
 
-// Processes join chat request using provided connection and identifiers.
-func (m *ChatManager) Join(username string, conn *websocket.Conn, chatName string) error {
+func (m *ChatManager) AddClient(client interfaces.Client, chatName string) error {
 	m.chatsLock.RLock()
 	defer m.chatsLock.RUnlock()
 
@@ -63,7 +65,7 @@ func (m *ChatManager) Join(username string, conn *websocket.Conn, chatName strin
 		return fmt.Errorf("chat '%v' does not exist", chatName)
 	}
 
-	if err := chat.Join(username, conn); err != nil {
+	if err := chat.AddClient(client); err != nil {
 		return err
 	}
 

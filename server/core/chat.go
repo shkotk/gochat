@@ -4,53 +4,48 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/shkotk/gochat/common/apimodels/events"
+	"github.com/shkotk/gochat/server/interfaces"
 	"github.com/sirupsen/logrus"
 )
 
 type Chat struct {
 	Name string
 
-	members map[string]*Client
+	members map[string]interfaces.Client
 
 	events        chan any
 	joinRequests  chan joinRequest
 	leaveRequests chan leaveRequest
 
-	logger *logrus.Logger
+	eventsPreProcessor interfaces.EventPreProcessor
+	logger             *logrus.Logger
 }
 
-func NewChat(chatName string, logger *logrus.Logger) *Chat {
+func NewChat(
+	chatName string,
+	eventsPreProcessor interfaces.EventPreProcessor,
+	logger *logrus.Logger,
+) *Chat {
 	return &Chat{
-		Name:          chatName,
-		members:       make(map[string]*Client),
-		events:        make(chan any),
-		joinRequests:  make(chan joinRequest),
-		leaveRequests: make(chan leaveRequest),
-		logger:        logger,
+		Name:               chatName,
+		members:            make(map[string]interfaces.Client),
+		events:             make(chan any),
+		joinRequests:       make(chan joinRequest),
+		leaveRequests:      make(chan leaveRequest),
+		eventsPreProcessor: eventsPreProcessor,
+		logger:             logger,
 	}
 }
 
-func (c *Chat) Join(username string, conn *websocket.Conn) error {
+func (c *Chat) AddClient(client interfaces.Client) error {
 	err := make(chan error)
 	c.joinRequests <- joinRequest{
-		Username: username,
-		Conn:     conn,
-		Err:      err,
+		Client: client,
+		Err:    err,
 	}
 
-	return <-err // returns as soon as join event is processed by main loop
-}
-
-func (c *Chat) Leave(username string) {
-	c.leaveRequests <- leaveRequest{
-		Username: username,
-	}
-}
-
-func (c *Chat) Send(event any) {
-	c.events <- event
+	return <-err
 }
 
 // Loop processing join and leave requests, events from clients in chat.
@@ -58,68 +53,85 @@ func (c *Chat) Run() {
 	for {
 		select {
 		case request := <-c.joinRequests:
-			if _, ok := c.members[request.Username]; ok {
-				request.Err <- fmt.Errorf(
-					"client '%v' is already in chat '%v'", request.Username, c.Name)
-				continue
-			}
-
-			client := NewClient(request.Username, request.Conn, c, c.logger)
-			c.members[request.Username] = client
-			client.Start()
-
-			request.Err <- nil
-
-			c.broadcast(events.SystemMessage{
-				Text: fmt.Sprintf("%v joined chat", request.Username),
-				Time: time.Now(),
-			})
-
+			c.processJoinRequest(request)
 		case request := <-c.leaveRequests:
-			if _, ok := c.members[request.Username]; !ok {
-				continue
-			}
-			delete(c.members, request.Username)
-
-			c.broadcast(events.SystemMessage{
-				Text: fmt.Sprintf("%v left chat", request.Username),
-				Time: time.Now(),
-			})
-
+			c.processLeaveRequest(request)
 		case event := <-c.events:
-			c.processEvent(event)
+			c.broadcast(event)
 		}
 	}
 }
 
-func (c *Chat) processEvent(event any) {
-	switch event.(type) {
-	case events.NewMessage:
-		c.broadcast(event)
+func (c *Chat) processJoinRequest(request joinRequest) {
+	client := request.Client
+	if _, ok := c.members[client.ID()]; ok {
+		request.Err <- fmt.Errorf(
+			"client '%s' is already in chat '%s'", client.ID(), c.Name)
+		return
+	}
 
-	default:
-		c.logger.Errorf("chat: can't process event of type %T: '%v'", event, event)
+	request.Err <- nil
+	c.broadcast(&events.SystemMessage{
+		Text: fmt.Sprintf("%s joined chat", client.ID()),
+		Time: time.Now(),
+	})
+	c.members[client.ID()] = client
+
+	go c.pumpMessages(client)
+}
+
+func (c *Chat) processLeaveRequest(request leaveRequest) {
+	if _, ok := c.members[request.ClientID]; !ok {
+		c.logger.Warnf(
+			"chat: can't process leave request, user '%s' is not in chat", request.ClientID)
+		return
+	}
+
+	delete(c.members, request.ClientID)
+	c.broadcast(&events.SystemMessage{
+		Text: fmt.Sprintf("%s left chat", request.ClientID),
+		Time: time.Now(),
+	})
+}
+
+// Reads incoming events from client and pumps them to chat events channel.
+func (c *Chat) pumpMessages(client interfaces.Client) {
+	for {
+		select {
+		case event := <-client.In():
+			err := c.eventsPreProcessor.PreProcess(event, client)
+			if err != nil {
+				c.logger.WithError(err).Warnf(
+					"chat: error pre-processing event from '%s'", client.ID())
+				continue
+			}
+			c.events <- event
+
+		case <-client.Done():
+			c.leaveRequests <- leaveRequest{client.ID()}
+			return
+		}
 	}
 }
 
 func (c *Chat) broadcast(event any) {
 	for _, client := range c.members {
-		go func(client *Client) {
-			err := client.Write(event)
-			if err != nil {
-				c.logger.WithError(err).Warnf(
-					"chat: failed writing message to %s", client.Username)
-			}
-		}(client)
+		go send(event, client)
+	}
+}
+
+func send(event any, client interfaces.Client) {
+	select {
+	case client.Out() <- event:
+	case <-client.Done():
 	}
 }
 
 type joinRequest struct {
-	Username string
-	Conn     *websocket.Conn
-	Err      chan error
+	Client interfaces.Client
+	Err    chan error
 }
 
 type leaveRequest struct {
-	Username string
+	ClientID string
 }
