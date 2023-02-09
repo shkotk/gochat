@@ -12,7 +12,6 @@ import (
 	"github.com/shkotk/gochat/common/validation"
 	"github.com/shkotk/gochat/server/config"
 	"github.com/shkotk/gochat/server/controllers"
-	"github.com/shkotk/gochat/server/core"
 	"github.com/shkotk/gochat/server/interfaces"
 	"github.com/shkotk/gochat/server/middleware"
 	"github.com/shkotk/gochat/server/models"
@@ -51,11 +50,11 @@ var servicesSet = wire.NewSet(
 	services.NewJWTManager,
 	repositories.NewUserRepository,
 
-	wire.Bind(new(interfaces.ChatManager), new(*core.ChatManager)),
-	core.NewChatManager,
+	wire.Bind(new(interfaces.ChatManager), new(*services.ChatManager)),
+	services.NewChatManager,
 
-	wire.Bind(new(interfaces.EventPreProcessor), new(*core.EventPreProcessor)),
-	core.NewEventPreProcessor,
+	wire.Bind(new(interfaces.EventPreProcessor), new(*services.EventPreProcessor)),
+	services.NewEventPreProcessor,
 
 	controllers.NewUserController,
 	controllers.NewChatController,

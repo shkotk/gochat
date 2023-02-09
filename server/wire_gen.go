@@ -10,7 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/shkotk/gochat/server/config"
 	"github.com/shkotk/gochat/server/controllers"
-	"github.com/shkotk/gochat/server/core"
 	"github.com/shkotk/gochat/server/repositories"
 	"github.com/shkotk/gochat/server/services"
 )
@@ -23,8 +22,8 @@ func InitializeRouter(cfg config.Config) *gin.Engine {
 	db := setupDB(cfg, logger)
 	userRepository := repositories.NewUserRepository(logger, db)
 	userController := controllers.NewUserController(logger, userRepository, jwtManager)
-	eventPreProcessor := core.NewEventPreProcessor()
-	chatManager := core.NewChatManager(logger, eventPreProcessor)
+	eventPreProcessor := services.NewEventPreProcessor()
+	chatManager := services.NewChatManager(logger, eventPreProcessor)
 	chatController := controllers.NewChatController(logger, jwtManager, chatManager)
 	engine := setupRouter(cfg, logger, jwtManager, userController, chatController)
 	return engine

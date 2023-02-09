@@ -1,4 +1,4 @@
-package core
+package services
 
 import (
 	"fmt"
@@ -15,8 +15,8 @@ type Chat struct {
 	members map[string]interfaces.Client
 
 	events        chan any
-	joinRequests  chan joinRequest
-	leaveRequests chan leaveRequest
+	joinRequests  chan joinChatRequest
+	leaveRequests chan leaveChatRequest
 
 	eventsPreProcessor interfaces.EventPreProcessor
 	logger             *logrus.Logger
@@ -31,8 +31,8 @@ func NewChat(
 		Name:               chatName,
 		members:            make(map[string]interfaces.Client),
 		events:             make(chan any),
-		joinRequests:       make(chan joinRequest),
-		leaveRequests:      make(chan leaveRequest),
+		joinRequests:       make(chan joinChatRequest),
+		leaveRequests:      make(chan leaveChatRequest),
 		eventsPreProcessor: eventsPreProcessor,
 		logger:             logger,
 	}
@@ -40,7 +40,7 @@ func NewChat(
 
 func (c *Chat) AddClient(client interfaces.Client) error {
 	err := make(chan error)
-	c.joinRequests <- joinRequest{
+	c.joinRequests <- joinChatRequest{
 		Client: client,
 		Err:    err,
 	}
@@ -62,7 +62,7 @@ func (c *Chat) Run() {
 	}
 }
 
-func (c *Chat) processJoinRequest(request joinRequest) {
+func (c *Chat) processJoinRequest(request joinChatRequest) {
 	client := request.Client
 	if _, ok := c.members[client.ID()]; ok {
 		request.Err <- fmt.Errorf(
@@ -80,7 +80,7 @@ func (c *Chat) processJoinRequest(request joinRequest) {
 	go c.pumpMessages(client)
 }
 
-func (c *Chat) processLeaveRequest(request leaveRequest) {
+func (c *Chat) processLeaveRequest(request leaveChatRequest) {
 	if _, ok := c.members[request.ClientID]; !ok {
 		c.logger.Warnf(
 			"chat: can't process leave request, user '%s' is not in chat", request.ClientID)
@@ -108,7 +108,7 @@ func (c *Chat) pumpMessages(client interfaces.Client) {
 			c.events <- event
 
 		case <-client.Done():
-			c.leaveRequests <- leaveRequest{client.ID()}
+			c.leaveRequests <- leaveChatRequest{client.ID()}
 			return
 		}
 	}
@@ -127,11 +127,11 @@ func send(event any, client interfaces.Client) {
 	}
 }
 
-type joinRequest struct {
+type joinChatRequest struct {
 	Client interfaces.Client
 	Err    chan error
 }
 
-type leaveRequest struct {
+type leaveChatRequest struct {
 	ClientID string
 }
